@@ -524,6 +524,44 @@ func (c *Consumer) makeAuthorizedRequest(method string, url string, dataLocation
 	return c.httpExecute(method, url+queryParams, contentType, body, authParams)
 }
 
+func (c *Consumer) MakeRequest(r *http.Request, token *AccessToken) (resp *http.Response, err error) {
+	// Get method, url, contentType and body from the request object.
+	var (
+		method      = r.Method
+		url         = r.URL.String()
+		contentType = r.Header.Get("Content-Type")
+	)
+
+	defer r.Body.Close()
+	bodyBytes, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	body := string(bodyBytes)
+
+	// The rest is just copied makeAuthorizedRequest, a bit pruned, though.
+	allParams := c.baseParams(c.consumerKey, c.AdditionalParams)
+
+	// Do not add the "oauth_token" parameter, if the access token has not been
+	// specified. By omitting this parameter when it is not specified, allows
+	// two-legged OAuth calls.
+	if len(token.Token) > 0 {
+		allParams.Add(TOKEN_PARAM, token.Token)
+	}
+	authParams := allParams.Clone()
+
+	baseString := c.requestString(method, url, allParams)
+
+	signature, err := c.signer.Sign(baseString, token.Secret)
+	if err != nil {
+		return nil, err
+	}
+
+	authParams.Add(SIGNATURE_PARAM, signature)
+
+	return c.httpExecute(method, url, contentType, body, authParams)
+}
+
 type request struct {
 	method      string
 	url         string
